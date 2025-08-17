@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JPEG ファイル分析ツール</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .result-section {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .result-title {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .binary-view {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            background: #fff;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .exif-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .exif-table th, .exif-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .exif-table th {
+            background-color: #f2f2f2;
+        }
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .info-table th, .info-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .info-table th {
+            background-color: #f2f2f2;
+            width: 30%;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef } = React;
+
+        function JPEGAnalyzer() {
+            const [file, setFile] = useState(null);
+            const [selectedFeatures, setSelectedFeatures] = useState({
+                basicInfo: true,
+                exifInfo: true,
+                binaryAnalysis: false
+            });
+            const [analysisResults, setAnalysisResults] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const fileInputRef = useRef();
+
+            const handleFileSelect = (selectedFile) => {
+                if (selectedFile && selectedFile.type === 'image/jpeg') {
+                    setFile(selectedFile);
+                    analyzeFile(selectedFile);
+                } else {
+                    alert('JPEGファイルを選択してください。');
+                }
+            };
+
+            const handleDrop = (e) => {
+                e.preventDefault();
+                e.target.classList.remove('dragover');
+                const droppedFile = e.dataTransfer.files[0];
+                handleFileSelect(droppedFile);
+            };
+
+            const handleDragOver = (e) => {
+                e.preventDefault();
+                e.target.classList.add('dragover');
+            };
+
+            const handleDragLeave = (e) => {
+                e.preventDefault();
+                e.target.classList.remove('dragover');
+            };
+
+            const handleFeatureChange = (feature) => {
+                const newFeatures = {
+                    ...selectedFeatures,
+                    [feature]: !selectedFeatures[feature]
+                };
+                setSelectedFeatures(newFeatures);
+                
+                if (file) {
+                    analyzeFile(file, newFeatures);
+                }
+            };
+
+            const analyzeFile = async (fileToAnalyze, features = selectedFeatures) => {
+                setLoading(true);
+                const results = {};
+
+                try {
+                    if (features.basicInfo) {
+                        results.basicInfo = await getBasicInfo(fileToAnalyze);
+                    }
+
+                    if (features.exifInfo) {
+                        results.exifInfo = await getExifInfo(fileToAnalyze);
+                    }
+
+                    if (features.binaryAnalysis) {
+                        results.binaryAnalysis = await getBinaryAnalysis(fileToAnalyze);
+                    }
+
+                    setAnalysisResults(results);
+                } catch (error) {
+                    console.error('分析エラー:', error);
+                    alert('ファイルの分析中にエラーが発生しました。');
+                }
+                
+                setLoading(false);
+            };
+
+            const getBasicInfo = async (file) => {
+                return {
+                    fileName: file.name,
+                    fileSize: file.size,
+                    fileType: file.type,
+                    lastModified: new Date(file.lastModified).toLocaleString('ja-JP')
+                };
+            };
+
+            const getExifInfo = async (file) => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const arrayBuffer = e.target.result;
+                        const exifData = parseExif(arrayBuffer);
+                        resolve(exifData);
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            };
+
+            const getBinaryAnalysis = async (file) => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const arrayBuffer = e.target.result;
+                        const binaryData = parseBinary(arrayBuffer);
+                        resolve(binaryData);
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            };
+
+            const parseExif = (arrayBuffer) => {
+                const view = new DataView(arrayBuffer);
+                const exifData = {};
+
+                if (view.getUint16(0) !== 0xFFD8) {
+                    return { error: 'このファイルは有効なJPEGファイルではありません。' };
+                }
+
+                let offset = 2;
+                while (offset < arrayBuffer.byteLength) {
+                    const marker = view.getUint16(offset);
+                    
+                    if (marker === 0xFFE1) {
+                        const length = view.getUint16(offset + 2);
+                        const exifHeader = new Uint8Array(arrayBuffer.slice(offset + 4, offset + 10));
+                        const exifString = String.fromCharCode.apply(null, exifHeader);
+                        
+                        if (exifString.includes('Exif')) {
+                            const tiffOffset = offset + 10;
+                            const byteOrder = view.getUint16(tiffOffset);
+                            const isLittleEndian = byteOrder === 0x4949;
+                            
+                            const ifdOffset = view.getUint32(tiffOffset + 4, isLittleEndian) + tiffOffset;
+                            const numEntries = view.getUint16(ifdOffset, isLittleEndian);
+                            
+                            for (let i = 0; i < numEntries; i++) {
+                                const entryOffset = ifdOffset + 2 + (i * 12);
+                                const tag = view.getUint16(entryOffset, isLittleEndian);
+                                const type = view.getUint16(entryOffset + 2, isLittleEndian);
+                                const count = view.getUint32(entryOffset + 4, isLittleEndian);
+                                const valueOffset = entryOffset + 8;
+                                
+                                const tagName = getExifTagName(tag);
+                                const value = getExifValue(view, type, count, valueOffset, isLittleEndian, tiffOffset);
+                                
+                                if (tagName && value !== null) {
+                                    exifData[tagName] = value;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    
+                    if (marker === 0xFFDA) break;
+                    
+                    const segmentLength = view.getUint16(offset + 2);
+                    offset += 2 + segmentLength;
+                }
+
+                return Object.keys(exifData).length > 0 ? exifData : { message: 'Exif情報が見つかりませんでした。' };
+            };
+
+            const getExifTagName = (tag) => {
+                const tags = {
+                    0x010F: 'Make',
+                    0x0110: 'Model',
+                    0x0112: 'Orientation',
+                    0x011A: 'XResolution',
+                    0x011B: 'YResolution',
+                    0x0128: 'ResolutionUnit',
+                    0x0132: 'DateTime',
+                    0x8769: 'ExifIFDPointer',
+                    0x829A: 'ExposureTime',
+                    0x829D: 'FNumber',
+                    0x8822: 'ExposureProgram',
+                    0x8827: 'ISOSpeedRatings',
+                    0x9003: 'DateTimeOriginal',
+                    0x9004: 'DateTimeDigitized',
+                    0x920A: 'FocalLength',
+                    0xA002: 'PixelXDimension',
+                    0xA003: 'PixelYDimension'
+                };
+                return tags[tag];
+            };
+
+            const getExifValue = (view, type, count, valueOffset, isLittleEndian, tiffOffset) => {
+                try {
+                    switch (type) {
+                        case 1: // BYTE
+                            return view.getUint8(valueOffset);
+                        case 2: // ASCII
+                            if (count <= 4) {
+                                return String.fromCharCode.apply(null, new Uint8Array(view.buffer.slice(valueOffset, valueOffset + count - 1)));
+                            } else {
+                                const actualOffset = view.getUint32(valueOffset, isLittleEndian) + tiffOffset;
+                                return String.fromCharCode.apply(null, new Uint8Array(view.buffer.slice(actualOffset, actualOffset + count - 1)));
+                            }
+                        case 3: // SHORT
+                            return view.getUint16(valueOffset, isLittleEndian);
+                        case 4: // LONG
+                            return view.getUint32(valueOffset, isLittleEndian);
+                        case 5: // RATIONAL
+                            const rationalOffset = view.getUint32(valueOffset, isLittleEndian) + tiffOffset;
+                            const numerator = view.getUint32(rationalOffset, isLittleEndian);
+                            const denominator = view.getUint32(rationalOffset + 4, isLittleEndian);
+                            return denominator !== 0 ? (numerator / denominator) : 0;
+                        default:
+                            return null;
+                    }
+                } catch (error) {
+                    return null;
+                }
+            };
+
+            const parseBinary = (arrayBuffer) => {
+                const view = new DataView(arrayBuffer);
+                const analysis = [];
+                const maxBytes = Math.min(arrayBuffer.byteLength, 1000);
+
+                for (let i = 0; i < maxBytes; i += 16) {
+                    const address = i.toString(16).padStart(8, '0').toUpperCase();
+                    let hexBytes = '';
+                    let asciiChars = '';
+
+                    for (let j = 0; j < 16 && i + j < maxBytes; j++) {
+                        const byte = view.getUint8(i + j);
+                        hexBytes += byte.toString(16).padStart(2, '0').toUpperCase() + ' ';
+                        asciiChars += (byte >= 32 && byte <= 126) ? String.fromCharCode(byte) : '.';
+                    }
+
+                    let info = '';
+                    if (i === 0) {
+                        info = ' // JPEG SOI (Start of Image)';
+                    } else if (i === 2) {
+                        const marker = view.getUint16(i);
+                        if (marker === 0xFFE0) info = ' // APP0 Segment';
+                        else if (marker === 0xFFE1) info = ' // APP1 Segment (Exif)';
+                    }
+
+                    analysis.push(`${address}: ${hexBytes.padEnd(48)} ${asciiChars}${info}`);
+                }
+
+                return analysis.join('\n');
+            };
+
+            return (
+                <div className="container">
+                    <h1>JPEG ファイル分析ツール</h1>
+                    
+                    <div 
+                        className="upload-area"
+                        onClick={() => fileInputRef.current.click()}
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                    >
+                        <input 
+                            type="file" 
+                            ref={fileInputRef}
+                            accept="image/jpeg"
+                            style={{display: 'none'}}
+                            onChange={(e) => handleFileSelect(e.target.files[0])}
+                        />
+                        <p>JPEGファイルをドラッグ&ドロップするか、クリックしてファイルを選択してください</p>
+                        {file && <p>選択されたファイル: {file.name}</p>}
+                    </div>
+
+                    <div className="checkbox-group">
+                        <div className="checkbox-item">
+                            <input 
+                                type="checkbox" 
+                                id="basicInfo"
+                                checked={selectedFeatures.basicInfo}
+                                onChange={() => handleFeatureChange('basicInfo')}
+                            />
+                            <label htmlFor="basicInfo">基本情報</label>
+                        </div>
+                        <div className="checkbox-item">
+                            <input 
+                                type="checkbox" 
+                                id="exifInfo"
+                                checked={selectedFeatures.exifInfo}
+                                onChange={() => handleFeatureChange('exifInfo')}
+                            />
+                            <label htmlFor="exifInfo">Exif情報</label>
+                        </div>
+                        <div className="checkbox-item">
+                            <input 
+                                type="checkbox" 
+                                id="binaryAnalysis"
+                                checked={selectedFeatures.binaryAnalysis}
+                                onChange={() => handleFeatureChange('binaryAnalysis')}
+                            />
+                            <label htmlFor="binaryAnalysis">バイナリ分析</label>
+                        </div>
+                    </div>
+
+                    {loading && <p>分析中...</p>}
+
+                    {analysisResults && (
+                        <div>
+                            {analysisResults.basicInfo && (
+                                <div className="result-section">
+                                    <div className="result-title">基本情報</div>
+                                    <table className="info-table">
+                                        <tbody>
+                                            <tr><th>ファイル名</th><td>{analysisResults.basicInfo.fileName}</td></tr>
+                                            <tr><th>ファイルサイズ</th><td>{analysisResults.basicInfo.fileSize.toLocaleString()} bytes</td></tr>
+                                            <tr><th>ファイルタイプ</th><td>{analysisResults.basicInfo.fileType}</td></tr>
+                                            <tr><th>最終更新日時</th><td>{analysisResults.basicInfo.lastModified}</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {analysisResults.exifInfo && (
+                                <div className="result-section">
+                                    <div className="result-title">Exif情報</div>
+                                    {analysisResults.exifInfo.error || analysisResults.exifInfo.message ? (
+                                        <p>{analysisResults.exifInfo.error || analysisResults.exifInfo.message}</p>
+                                    ) : (
+                                        <table className="exif-table">
+                                            <thead>
+                                                <tr><th>項目</th><th>値</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {Object.entries(analysisResults.exifInfo).map(([key, value]) => (
+                                                    <tr key={key}>
+                                                        <td>{key}</td>
+                                                        <td>{typeof value === 'number' ? value.toString() : value}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            )}
+
+                            {analysisResults.binaryAnalysis && (
+                                <div className="result-section">
+                                    <div className="result-title">バイナリ分析結果 (最初の1000バイト)</div>
+                                    <div className="binary-view">{analysisResults.binaryAnalysis}</div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<JPEGAnalyzer />, document.getElementById('root'));
+    </script>
+</body>
+</html>
